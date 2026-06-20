@@ -1,0 +1,6 @@
+{
+  "name": "Task Management Workspace",
+  "description": "A centralized daily workspace with automatic task updates, a prioritization matrix, a Kanban board, and smart performance metrics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

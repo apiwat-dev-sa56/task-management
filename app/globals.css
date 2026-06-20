@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-sans), system-ui, -apple-system, sans-serif;
+}
+
+@utility focus-ring {
+  @apply focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2;
+}
+
+/* Custom visual styles */
+body {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
