@@ -19,6 +19,7 @@ import {
   Grid, 
   HelpCircle,
   Search,
+  ChevronLeft,
   ChevronRight,
   Sparkles,
   ArrowRight,
@@ -28,6 +29,13 @@ import {
   Info,
   Table
 } from 'lucide-react';
+import dayjs from 'dayjs';
+import 'dayjs/locale/th';
+
+// Configure dayjs Thai locale globally
+if (typeof window !== 'undefined') {
+  dayjs.locale('th');
+}
 
 // Define Task Structure
 interface Task {
@@ -37,7 +45,9 @@ interface Task {
   category: string;
   assignee: string;
   startDate: string;
+  startTime?: string;
   dueDate: string;
+  dueTime?: string;
   isImportant: boolean; // สำคัญ
   isUrgent: boolean;    // เร่งด่วน
   status: 'not-started' | 'in-progress' | 'review' | 'completed' | 'revising' | 'disapproved';
@@ -192,6 +202,379 @@ const DEFAULT_TASKS: Task[] = [
   }
 ];
 
+// --- THAI BUDDHIST ERA UTILITIES & COMPONENT ---
+
+const getBuddhistYear = (date: Date | string | dayjs.Dayjs) => {
+  return dayjs(date).year() + 543;
+};
+
+const formatThaiBuddhistDate = (dateStr: string, timeStr?: string) => {
+  if (!dateStr) return 'ไม่ได้ระบุ';
+  const d = dayjs(dateStr);
+  if (!d.isValid()) return dateStr;
+  
+  const thaiMonthsShort = [
+    'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+  ];
+  
+  const day = d.date();
+  const monthIdx = d.month();
+  const yearBE = d.year() + 543;
+  
+  let formatted = `${day} ${thaiMonthsShort[monthIdx]} ${yearBE}`;
+  if (timeStr && timeStr.trim() !== '') {
+    formatted += ` (${timeStr} น.)`;
+  }
+  return formatted;
+};
+
+interface THDateTimePickerProps {
+  label: string;
+  dateValue: string; // YYYY-MM-DD
+  timeValue: string; // HH:mm
+  onChange: (date: string, time: string) => void;
+  isDue?: boolean;
+}
+
+function THDateTimePicker({
+  label,
+  dateValue,
+  timeValue,
+  onChange,
+  isDue = false
+}: THDateTimePickerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(dayjs(dateValue || undefined));
+  
+  // Format the visual display in Thai & Buddhist Era
+  const displayFormatted = () => {
+    if (!dateValue) return 'เลือกวันและเวลา';
+    const d = dayjs(dateValue);
+    if (!d.isValid()) return dateValue;
+    
+    const thaiDays = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
+    const thaiMonthsShort = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+    
+    const dayOfWeek = thaiDays[d.day()];
+    const dayNum = d.date();
+    const monthStr = thaiMonthsShort[d.month()];
+    const yearBE = d.year() + 543;
+    
+    return `${dayOfWeek}ที่ ${dayNum} ${monthStr} ${yearBE} - ${timeValue || '09:00'} น.`;
+  };
+
+  // Pre-calculate Calendar grid
+  const startOfMonth = currentMonth.startOf('month');
+  const endOfMonth = currentMonth.endOf('month');
+  const totalDaysInMonth = currentMonth.daysInMonth();
+  const startDayOfWeek = startOfMonth.day(); // 0-6 (Sun-Sat)
+
+  const prevMonth = currentMonth.subtract(1, 'month');
+  const prevDaysInMonth = prevMonth.daysInMonth();
+  const prevMonthCells = [];
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const day = prevDaysInMonth - i;
+    const partialDate = prevMonth.date(day);
+    prevMonthCells.push({
+      dateStr: partialDate.format('YYYY-MM-DD'),
+      dayNum: day,
+      isCurrentMonth: false,
+    });
+  }
+
+  const currentMonthCells = [];
+  for (let i = 1; i <= totalDaysInMonth; i++) {
+    const partialDate = currentMonth.date(i);
+    currentMonthCells.push({
+      dateStr: partialDate.format('YYYY-MM-DD'),
+      dayNum: i,
+      isCurrentMonth: true,
+    });
+  }
+
+  const totalCells = prevMonthCells.length + currentMonthCells.length;
+  const nextMonthCellsNeeded = 42 - totalCells;
+  const nextMonth = currentMonth.add(1, 'month');
+  const nextMonthCells = [];
+  for (let i = 1; i <= nextMonthCellsNeeded; i++) {
+    const partialDate = nextMonth.date(i);
+    nextMonthCells.push({
+      dateStr: partialDate.format('YYYY-MM-DD'),
+      dayNum: i,
+      isCurrentMonth: false,
+    });
+  }
+
+  const allCells = [...prevMonthCells, ...currentMonthCells, ...nextMonthCells];
+
+  const THAI_MONTH_NAMES = [
+    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+  ];
+
+  // Year choices
+  const currentYear = dayjs().year();
+  const yearsRange = Array.from({ length: 41 }, (_, i) => currentYear - 20 + i);
+
+  const handleDayClick = (dateStr: string) => {
+    onChange(dateStr, timeValue);
+  };
+
+  const handleTimeChange = (type: 'hour' | 'minute', val: string) => {
+    const [h, m] = (timeValue || '09:00').split(':');
+    let nextTime = '';
+    if (type === 'hour') {
+      nextTime = `${val}:${m}`;
+    } else {
+      nextTime = `${h}:${val}`;
+    }
+    onChange(dateValue, nextTime);
+  };
+
+  const handlePresetTime = (presetTime: string) => {
+    onChange(dateValue, presetTime);
+  };
+
+  // Date shortcuts
+  const handleShortcut = (type: 'today' | 'tomorrow' | 'next-week') => {
+    let target = dayjs();
+    if (type === 'tomorrow') target = dayjs().add(1, 'day');
+    if (type === 'next-week') target = dayjs().add(1, 'week');
+    
+    onChange(target.format('YYYY-MM-DD'), timeValue);
+    setCurrentMonth(target);
+  };
+
+  const [currentHour, currentMinute] = (timeValue || '09:00').split(':');
+
+  return (
+    <div className="relative w-full">
+      <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isDue ? 'text-rose-600' : 'text-slate-700'}`}>
+        {label}
+      </label>
+      
+      {/* Trigger Button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left border border-zinc-200 rounded-lg text-xs bg-slate-50 hover:bg-white active:bg-slate-50/50 hover:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all cursor-pointer shadow-3xs"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Calendar className={`w-4 h-4 shrink-0 ${isDue ? 'text-rose-500' : 'text-indigo-500'}`} />
+          <span className="truncate font-semibold text-slate-800">{displayFormatted()}</span>
+        </div>
+        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+      </button>
+
+      {/* Popover */}
+      {isOpen && (
+        <>
+          {/* Backdrop layer to click away */}
+          <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
+          
+          <div className={`absolute top-full mt-1.5 bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 z-50 animate-fade-in text-slate-800 space-y-4 w-[295px] xs:w-[324px] max-w-[calc(100vw-32px)] left-1/2 -translate-x-1/2 ${
+            isDue 
+              ? 'sm:left-auto sm:right-0 sm:translate-x-0' 
+              : 'sm:left-0 sm:right-auto sm:translate-x-0'
+          }`}>
+            
+            {/* Header: Month and Year selectors */}
+            <div className="flex items-center justify-between gap-1 pb-2 border-b border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setCurrentMonth(currentMonth.subtract(1, 'month'))}
+                className="p-1 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-slate-500"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                {/* Month Dropdown */}
+                <select
+                  value={currentMonth.month()}
+                  onChange={(e) => setCurrentMonth(currentMonth.month(parseInt(e.target.value)))}
+                  className="bg-transparent hover:bg-slate-50 p-1 rounded cursor-pointer font-sans"
+                >
+                  {THAI_MONTH_NAMES.map((mName, idx) => (
+                    <option key={idx} value={idx}>{mName}</option>
+                  ))}
+                </select>
+
+                {/* Year Dropdown */}
+                <select
+                  value={currentMonth.year()}
+                  onChange={(e) => setCurrentMonth(currentMonth.year(parseInt(e.target.value)))}
+                  className="bg-transparent hover:bg-slate-50 p-1 rounded cursor-pointer font-mono"
+                >
+                  {yearsRange.map((yr) => (
+                    <option key={yr} value={yr}>พ.ศ. {yr + 543}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentMonth(currentMonth.add(1, 'month'))}
+                className="p-1 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-slate-500"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Presets for Days */}
+            <div className="flex gap-1.5 justify-between">
+              <button
+                type="button"
+                onClick={() => handleShortcut('today')}
+                className="flex-1 text-[10px] sm:text-xs bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-zinc-100 rounded-lg py-1 px-1.5 font-medium transition-colors cursor-pointer text-center"
+              >
+                วันนี้ (Today)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleShortcut('tomorrow')}
+                className="flex-1 text-[10px] sm:text-xs bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-zinc-100 rounded-lg py-1 px-1.5 font-medium transition-colors cursor-pointer text-center"
+              >
+                พรุ่งนี้ (Tomorrow)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleShortcut('next-week')}
+                className="flex-1 text-[10px] sm:text-xs bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-zinc-100 rounded-lg py-1 px-1.5 font-medium transition-colors cursor-pointer text-center"
+              >
+                สัปดาห์หน้า
+              </button>
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="space-y-1">
+              {/* Day headers */}
+              <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400">
+                <span>อา.</span><span>จ.</span><span>อ.</span><span>พ.</span><span>พฤ.</span><span>ศ.</span><span>ส.</span>
+              </div>
+              
+              {/* Days Grid */}
+              <div className="grid grid-cols-7 gap-0.5 animate-fade-in-down">
+                {allCells.map((cell, idx) => {
+                  const isSelected = cell.dateStr === dateValue;
+                  const isToday = cell.dateStr === dayjs().format('YYYY-MM-DD');
+                  
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleDayClick(cell.dateStr)}
+                      className={`h-7 w-7 text-center mx-auto text-[11px] font-mono rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-indigo-600 text-white font-bold shadow-xs scale-105' 
+                          : isToday
+                            ? 'bg-amber-100 text-amber-800 font-bold border border-amber-300'
+                            : cell.isCurrentMonth
+                              ? 'text-slate-700 hover:bg-slate-100 hover:text-indigo-600'
+                              : 'text-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {cell.dayNum}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Time Picker block */}
+            <div className="pt-3 border-t border-zinc-100 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>กำหนดเวลา (Time)</span>
+                </span>
+                <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md font-mono">
+                  {timeValue || '09:00'} น.
+                </span>
+              </div>
+
+              {/* Preset times buttons */}
+              <div className="grid grid-cols-5 gap-1">
+                {['09:00', '13:00', '16:00', '18:00', '23:59'].map((pTime) => {
+                  const isActive = timeValue === pTime;
+                  let tLabel = pTime;
+                  if (pTime === '09:00') tLabel = 'เช้า';
+                  if (pTime === '13:00') tLabel = 'บ่าย';
+                  if (pTime === '16:00') tLabel = 'เย็น';
+                  if (pTime === '18:00') tLabel = 'ค่ำ';
+                  if (pTime === '23:59') tLabel = 'เที่ยงคืน';
+                  
+                  return (
+                    <button
+                      key={pTime}
+                      type="button"
+                      onClick={() => handlePresetTime(pTime)}
+                      className={`text-[9px] py-1 border rounded-md font-medium transition-all cursor-pointer text-center ${
+                        isActive
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-3xs'
+                          : 'bg-slate-50 border-zinc-100 hover:bg-slate-100 text-slate-500 hover:text-slate-800'
+                      }`}
+                      title={pTime}
+                    >
+                      {tLabel}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Interactive Hour & Minute select wheels */}
+              <div className="bg-slate-50 p-2 rounded-xl grid grid-cols-2 gap-2 border border-zinc-150">
+                <div>
+                  <label className="text-[9px] text-slate-400 block font-bold mb-0.5 uppercase">ชั่วโมง</label>
+                  <select
+                    value={currentHour}
+                    onChange={(e) => handleTimeChange('hour', e.target.value)}
+                    className="w-full text-xs p-1 px-1.5 border border-zinc-200 rounded-md bg-white font-mono text-slate-700 cursor-pointer font-bold focus:ring-1 focus:ring-indigo-400"
+                  >
+                    {Array.from({ length: 24 }).map((_, idx) => {
+                      const hStr = String(idx).padStart(2, '0');
+                      return <option key={idx} value={hStr}>{hStr} น.</option>;
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] text-slate-400 block font-bold mb-0.5 uppercase">นาที</label>
+                  <select
+                    value={currentMinute}
+                    onChange={(e) => handleTimeChange('minute', e.target.value)}
+                    className="w-full text-xs p-1 px-1.5 border border-zinc-200 rounded-md bg-white font-mono text-slate-700 cursor-pointer font-bold focus:ring-1 focus:ring-indigo-400"
+                  >
+                    {Array.from({ length: 60 }).map((_, idx) => {
+                      const mStr = String(idx).padStart(2, '0');
+                      return <option key={idx} value={mStr}>{mStr} นาที</option>;
+                    })}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="w-full bg-slate-900 text-white hover:bg-slate-800 font-semibold py-1.5 rounded-xl text-xs transition-colors cursor-pointer text-center"
+              >
+                ตกลง (Done)
+              </button>
+            </div>
+            
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function WorkspacePage() {
   // --- STATE ---
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -219,7 +602,9 @@ export default function WorkspacePage() {
     category: 'Development',
     assignee: '',
     startDate: getRelativeDateStr(0),
+    startTime: '09:00',
     dueDate: getRelativeDateStr(1),
+    dueTime: '18:00',
     isImportant: false,
     isUrgent: false,
     notes: '',
@@ -349,7 +734,9 @@ export default function WorkspacePage() {
       category: 'Development',
       assignee: '',
       startDate: getRelativeDateStr(0),
+      startTime: '09:00',
       dueDate: getRelativeDateStr(1),
+      dueTime: '18:00',
       isImportant: false,
       isUrgent: false,
       notes: '',
@@ -390,7 +777,9 @@ export default function WorkspacePage() {
             category: formValues.category,
             assignee: taskAssignee,
             startDate: formValues.startDate,
+            startTime: formValues.startTime,
             dueDate: formValues.dueDate,
+            dueTime: formValues.dueTime,
             isImportant: formValues.isImportant,
             isUrgent: formValues.isUrgent,
             status: finalStatus as Task['status'],
@@ -417,7 +806,9 @@ export default function WorkspacePage() {
         category: formValues.category,
         assignee: taskAssignee,
         startDate: formValues.startDate,
+        startTime: formValues.startTime,
         dueDate: formValues.dueDate,
+        dueTime: formValues.dueTime,
         isImportant: formValues.isImportant,
         isUrgent: formValues.isUrgent,
         status: finalStatus as Task['status'],
@@ -442,7 +833,9 @@ export default function WorkspacePage() {
       category: task.category,
       assignee: task.assignee,
       startDate: task.startDate,
+      startTime: task.startTime || '09:00',
       dueDate: task.dueDate,
+      dueTime: task.dueTime || '18:00',
       isImportant: task.isImportant,
       isUrgent: task.isUrgent,
       notes: task.notes || '',
@@ -889,33 +1282,34 @@ export default function WorkspacePage() {
               </div>
             </div>
 
-            {/* Start and Due Date split */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  เริ่มต้น (Start Date)
-                </label>
-                <input
-                  type="date"
-                  name="startDate"
-                  value={formValues.startDate}
-                  onChange={handleInputChange}
-                  className="w-full px-2.5 py-1.5 border border-zinc-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all cursor-pointer"
-                />
-              </div>
+            {/* Start and Due Date split with premium Custom Thai Buddhist Pickers */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <THDateTimePicker
+                label="เริ่มต้น (Start Date)"
+                dateValue={formValues.startDate}
+                timeValue={formValues.startTime || '09:00'}
+                onChange={(newDate, newTime) => {
+                  setFormValues(prev => ({
+                    ...prev,
+                    startDate: newDate,
+                    startTime: newTime
+                  }));
+                }}
+              />
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 text-rose-600 uppercase tracking-wider mb-1">
-                  วันส่งงาน (Due Date)
-                </label>
-                <input
-                  type="date"
-                  name="dueDate"
-                  value={formValues.dueDate}
-                  onChange={handleInputChange}
-                  className="w-full px-2.5 py-1.5 border border-zinc-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all cursor-pointer"
-                />
-              </div>
+              <THDateTimePicker
+                label="วันส่งงาน (Due Date)"
+                dateValue={formValues.dueDate}
+                timeValue={formValues.dueTime || '18:00'}
+                onChange={(newDate, newTime) => {
+                  setFormValues(prev => ({
+                    ...prev,
+                    dueDate: newDate,
+                    dueTime: newTime
+                  }));
+                }}
+                isDue
+              />
             </div>
 
             {/* Status & Progress (Visible inside form during edits or manual addition) */}
@@ -1394,8 +1788,10 @@ export default function WorkspacePage() {
                                     <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug line-clamp-2">
                                       {task.title}
                                     </h4>
-                                    <p className="text-[10px] sm:text-xs text-slate-400 font-medium sm:mt-0.5">
-                                      {task.assignee} • {task.project}
+                                    <p className="text-[10px] sm:text-xs text-slate-500 font-semibold sm:mt-0.5 flex flex-wrap items-center gap-1.5">
+                                      <span>👤 {task.assignee || 'ไม่ได้ระบุ'}</span>
+                                      <span>• 📂 {task.project}</span>
+                                      <span className="text-indigo-600 font-bold bg-indigo-50/50 px-1 py-0.2 rounded">• 📅 {formatThaiBuddhistDate(task.dueDate, task.dueTime)}</span>
                                     </p>
                                   </div>
                                 </div>
@@ -1566,8 +1962,10 @@ export default function WorkspacePage() {
                                     <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug line-clamp-2">
                                       {task.title}
                                     </h4>
-                                    <p className="text-[10px] sm:text-xs text-slate-400 font-medium sm:mt-0.5">
-                                      {task.assignee} • {task.project}
+                                    <p className="text-[10px] sm:text-xs text-slate-500 font-semibold sm:mt-0.5 flex flex-wrap items-center gap-1.5">
+                                      <span>👤 {task.assignee || 'ไม่ได้ระบุ'}</span>
+                                      <span>• 📂 {task.project}</span>
+                                      <span className="text-indigo-600 font-bold bg-indigo-50/50 px-1 py-0.2 rounded">• 📅 {formatThaiBuddhistDate(task.dueDate, task.dueTime)}</span>
                                     </p>
                                   </div>
                                 </div>
@@ -1894,6 +2292,11 @@ export default function WorkspacePage() {
                               {task.title}
                             </h5>
                             
+                            <div className="text-[10px] text-slate-500 font-medium space-y-0.5 mb-2 font-mono">
+                              <div>🏁 เริ่ม: {formatThaiBuddhistDate(task.startDate, task.startTime)}</div>
+                              <div className="text-indigo-600 font-bold">🏁 ส่ง: {formatThaiBuddhistDate(task.dueDate, task.dueTime)}</div>
+                            </div>
+                            
                             <div className="flex justify-between items-center text-[10px] text-slate-400 pt-2 border-t border-slate-100">
                               <span className="truncate max-w-[120px]">👤 {task.assignee}</span>
                               <button 
@@ -1964,6 +2367,11 @@ export default function WorkspacePage() {
                               </div>
                             </div>
                             
+                            <div className="text-[10px] text-slate-500 font-medium space-y-0.5 mb-2 font-mono">
+                              <div>⏱️ เริ่ม: {formatThaiBuddhistDate(task.startDate, task.startTime)}</div>
+                              <div className="text-indigo-600 font-bold">🎯 ส่ง: {formatThaiBuddhistDate(task.dueDate, task.dueTime)}</div>
+                            </div>
+                            
                             <div className="flex justify-between items-center text-[10px] text-slate-400 pt-2 border-t border-slate-100">
                               <span className="truncate max-w-[100px]">👤 {task.assignee}</span>
                               <button 
@@ -2032,6 +2440,11 @@ export default function WorkspacePage() {
                               </div>
                             </div>
                             
+                            <div className="text-[10px] text-slate-500 font-medium space-y-0.5 mb-2 font-mono">
+                              <div>👀 เริ่ม: {formatThaiBuddhistDate(task.startDate, task.startTime)}</div>
+                              <div className="text-amber-600 font-bold">🏁 ส่ง: {formatThaiBuddhistDate(task.dueDate, task.dueTime)}</div>
+                            </div>
+                            
                             <div className="flex justify-between items-center text-[10px] text-slate-400 pt-2 border-t border-slate-100">
                               <span className="truncate max-w-[100px]">👤 {task.assignee}</span>
                               <button 
@@ -2082,6 +2495,11 @@ export default function WorkspacePage() {
                             <h5 className="text-xs font-bold text-slate-700 line-through mb-1.5 pr-4 line-clamp-2">
                               {task.title}
                             </h5>
+                            
+                            <div className="text-[10px] text-slate-400 font-medium space-y-0.5 mb-2 font-mono line-through opacity-70">
+                              <div>✅ เริ่ม: {formatThaiBuddhistDate(task.startDate, task.startTime)}</div>
+                              <div>✅ เสร็จ: {formatThaiBuddhistDate(task.dueDate, task.dueTime)}</div>
+                            </div>
                             
                             <div className="flex justify-between items-center text-[10px] text-slate-400 pt-2 border-t border-slate-100">
                               <span className="truncate max-w-[120px]">👤 {task.assignee}</span>
@@ -2279,8 +2697,8 @@ export default function WorkspacePage() {
                                 {/* Dates & Target Countdown */}
                                 <td className="py-3.5 px-3 whitespace-nowrap">
                                   <div className="space-y-0.5 font-mono text-[10px]">
-                                    <div className="text-slate-400">เริ่ม: {task.startDate}</div>
-                                    <div className="text-slate-800 font-semibold mb-0.5">ส่ง: {task.dueDate}</div>
+                                    <div className="text-slate-400">เริ่ม: {formatThaiBuddhistDate(task.startDate, task.startTime)}</div>
+                                    <div className="text-slate-800 font-semibold mb-0.5">ส่ง: {formatThaiBuddhistDate(task.dueDate, task.dueTime)}</div>
                                     <span className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold ${
                                       task.status === 'completed' 
                                         ? 'bg-green-50 text-green-600'
